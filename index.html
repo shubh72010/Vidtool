@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Shorts Clipper</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @tailwind base;
+        @tailwind components;
+        @tailwind utilities;
+
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom styles for better video responsiveness */
+        video {
+            max-width: 100%;
+            height: auto;
+            border-radius: 0.5rem;
+            background-color: #000;
+        }
+        #waveformCanvas {
+            width: 100%;
+            height: 100px;
+            background-color: #374151; /* gray-700 */
+            border-radius: 0.5rem;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-4 md:p-8">
+    <div class="max-w-4xl mx-auto">
+
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600">
+                AI Shorts Clipper
+            </h1>
+            <p class="text-gray-400 mt-2">Upload a video, find the best part, and clip it!</p>
+        </header>
+
+        <!-- Main App Body -->
+        <main class="bg-gray-800 rounded-lg shadow-2xl p-6 md:p-8">
+
+            <!-- 1. Upload Section -->
+            <section class="mb-6">
+                <label for="videoUpload" class="block text-lg font-medium text-gray-200 mb-3">1. Upload Your Video</label>
+                <input type="file" id="videoUpload" accept="video/*" class="block w-full text-sm text-gray-400
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-full file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-purple-600 file:text-white
+                    hover:file:bg-purple-700
+                    cursor-pointer"
+                />
+            </section>
+
+            <!-- Status & Error Messages -->
+            <div id="statusMessage" class="hidden my-4 p-4 rounded-md text-sm"></div>
+
+            <!-- 2. Source Video & Controls -->
+            <section id="controlsSection" class="hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                    <!-- Left Column: Source & Settings -->
+                    <div>
+                        <h2 class="text-xl font-semibold mb-3">2. Source Video</h2>
+                        <video id="sourceVideo" controls muted playsinline class="w-full"></video>
+
+                        <div class="mt-6">
+                            <h2 class="text-xl font-semibold mb-3">3. Find Your Clip</h2>
+                            
+                            <!-- Analysis Button -->
+                            <button id="analyzeButton" class="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition duration-300 ease-in-out mb-4">
+                                &#x2728; Analyze & Draw Waveform
+                            </button>
+                            
+                            <!-- Waveform Display -->
+                            <h3 class="text-lg font-medium text-gray-300 mb-2">Click Waveform to Set Start Time:</h3>
+                            <canvas id="waveformCanvas" width="1000" height="100"></canvas>
+                            <p id="waveformHint" class="text-sm text-gray-500 mt-1 hidden">Analysis complete. Click above to seek.</p>
+
+                            <!-- Time Inputs -->
+                            <div class="flex items-center space-x-4 my-4">
+                                <div class="flex-1">
+                                    <label for="startTime" class="block text-sm font-medium text-gray-400">Start Time</label>
+                                    <input type="number" id="startTime" min="0" value="0" step="0.1" class="w-full bg-gray-700 text-white border border-gray-600 rounded-lg p-2 mt-1 focus:ring-purple-500 focus:border-purple-500">
+                                </div>
+                                <div class="flex-1">
+                                    <label for="clipDuration" class="block text-sm font-medium text-gray-400">Duration (sec)</label>
+                                    <input type="number" id="clipDuration" min="1" max="60" value="15" step="1" class="w-full bg-gray-700 text-white border border-gray-600 rounded-lg p-2 mt-1 focus:ring-purple-500 focus:border-purple-500">
+                                </div>
+                            </div>
+                            
+                            <!-- Generation Button -->
+                            <button id="processButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition duration-300 ease-in-out">
+                                4. Generate Vertical Clip
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Preview & Download -->
+                    <div>
+                        <h2 class="text-xl font-semibold mb-3">5. Preview & Download</h2>
+                        <div id="previewSection" class="hidden">
+                            <video id="clipPreview" controls playsinline class="w-full" style="aspect-ratio: 9 / 16;"></video>
+                            <a id="downloadButton" href="#" download="youtube_short_clip.webm" class="mt-4 w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition duration-300 ease-in-out inline-block">
+                                Download Clip (.webm)
+                            </a>
+                        </div>
+                        <div id="previewPlaceholder" class="flex items-center justify-center w-full bg-gray-700 rounded-lg" style="aspect-ratio: 9 / 16;">
+                            <p class="text-gray-500">Clip preview will appear here</p>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+        </main>
+
+        <!-- Hidden canvas for processing -->
+        <canvas id="processingCanvas" class="hidden"></canvas>
+    </div>
+
+    <script>
+        const videoUpload = document.getElementById('videoUpload');
+        const sourceVideo = document.getElementById('sourceVideo');
+        const controlsSection = document.getElementById('controlsSection');
+        
+        const analyzeButton = document.getElementById('analyzeButton');
+        const processButton = document.getElementById('processButton');
+        const downloadButton = document.getElementById('downloadButton');
+        
+        const startTimeInput = document.getElementById('startTime');
+        const clipDurationInput = document.getElementById('clipDuration');
+        
+        const clipPreview = document.getElementById('clipPreview');
+        const previewSection = document.getElementById('previewSection');
+        const previewPlaceholder = document.getElementById('previewPlaceholder');
+        
+        const statusMessage = document.getElementById('statusMessage');
+        const processingCanvas = document.getElementById('processingCanvas');
+        const processingCtx = processingCanvas.getContext('2d');
+
+        const waveformCanvas = document.getElementById('waveformCanvas');
+        const waveformCtx = waveformCanvas.getContext('2d');
+        const waveformHint = document.getElementById('waveformHint');
+
+        let videoBlobUrl = null;
+        let decodedAudioBuffer = null;
+
+        videoUpload.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                if (videoBlobUrl) {
+                    URL.revokeObjectURL(videoBlobUrl);
+                }
+                videoBlobUrl = URL.createObjectURL(file);
+                sourceVideo.src = videoBlobUrl;
+                controlsSection.classList.remove('hidden');
+                
+                previewSection.classList.add('hidden');
+                previewPlaceholder.classList.remove('hidden');
+                
+                // Reset analysis
+                decodedAudioBuffer = null;
+                waveformHint.classList.add('hidden');
+                waveformCtx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+                
+                showStatus('Video loaded. Ready to analyze or generate.', 'info');
+            }
+        });
+
+        analyzeButton.addEventListener('click', async () => {
+            if (!videoBlobUrl) {
+                showStatus('Please upload a video first.', 'error');
+                return;
+            }
+
+            if (decodedAudioBuffer) {
+                // Already analyzed, just find loudest segment
+                const { start } = findLoudestSegment(decodedAudioBuffer, 15);
+                startTimeInput.value = start.toFixed(2);
+                showStatus(`Loudest segment re-calculated: ${start.toFixed(2)}s`, 'success');
+                return;
+            }
+
+            showStatus('Analyzing audio & drawing waveform... This may take a moment for long videos.', 'loading');
+            analyzeButton.disabled = true;
+            analyzeButton.innerText = 'Analyzing...';
+
+            try {
+                // 1. Fetch video data
+                const response = await fetch(videoBlobUrl);
+                const videoData = await response.arrayBuffer();
+
+                // 2. Decode audio data
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                decodedAudioBuffer = await audioContext.decodeAudioData(videoData);
+
+                // 3. Find loudest segment and suggest it
+                const clipDuration = parseFloat(clipDurationInput.value) || 15;
+                const { start, end } = findLoudestSegment(decodedAudioBuffer, clipDuration);
+                
+                startTimeInput.value = start.toFixed(2);
+                
+                // 4. Draw the waveform
+                drawWaveform(decodedAudioBuffer);
+                waveformHint.classList.remove('hidden');
+
+                showStatus(`Analysis complete! Waveform drawn. Suggested loudest segment: ${start.toFixed(2)}s - ${end.toFixed(2)}s`, 'success');
+
+            } catch (error) {
+                console.error('Audio analysis failed:', error);
+                showStatus(`Audio analysis failed. This video format may not be supported for audio decoding. Error: ${error.message}`, 'error');
+            } finally {
+                analyzeButton.disabled = false;
+                analyzeButton.innerHTML = '&#x2728; Analyze & Draw Waveform';
+            }
+        });
+
+        /**
+         * Finds the loudest segment in a pre-decoded AudioBuffer.
+         * @param {AudioBuffer} audioBuffer - The decoded audio data.
+         * @param {number} clipDurationSeconds - The desired duration of the clip.
+         * @returns {{start: number, end: number}}
+         */
+        function findLoudestSegment(audioBuffer, clipDurationSeconds) {
+            const pcmData = audioBuffer.getChannelData(0); // Use the first channel
+            const sampleRate = audioBuffer.sampleRate;
+
+            // Analyze in blocks to optimize (10 blocks per second)
+            const blockSize = Math.floor(sampleRate / 10);
+            const numBlocks = Math.floor(pcmData.length / blockSize);
+            const energyPerBlock = [];
+
+            for (let i = 0; i < numBlocks; i++) {
+                let blockEnergy = 0;
+                const startSample = i * blockSize;
+                for (let j = 0; j < blockSize; j++) {
+                    const sample = pcmData[startSample + j] || 0;
+                    blockEnergy += sample * sample; // Sum of squares for energy
+                }
+                energyPerBlock.push(blockEnergy / blockSize); // Average energy for the block
+            }
+
+            // Find loudest window using a sliding window on the blocks
+            const clipDurationBlocks = clipDurationSeconds * 10;
+            if (clipDurationBlocks > energyPerBlock.length) {
+                return { start: 0, end: audioBuffer.duration };
+            }
+
+            let maxEnergy = 0;
+            let bestBlockIndex = 0;
+            let currentWindowEnergy = 0;
+
+            // Calculate energy for the first window
+            for (let i = 0; i < clipDurationBlocks; i++) {
+                currentWindowEnergy += energyPerBlock[i] || 0;
+            }
+            maxEnergy = currentWindowEnergy;
+
+            // Slide the window
+            for (let i = 1; i <= energyPerBlock.length - clipDurationBlocks; i++) {
+                currentWindowEnergy = currentWindowEnergy - (energyPerBlock[i - 1] || 0) + (energyPerBlock[i + clipDurationBlocks - 1] || 0);
+                if (currentWindowEnergy > maxEnergy) {
+                    maxEnergy = currentWindowEnergy;
+                    bestBlockIndex = i;
+                }
+            }
+
+            const bestStartTime = bestBlockIndex / 10; // Convert block index back to seconds
+            let bestEndTime = bestStartTime + clipDurationSeconds;
+            
+            if (bestEndTime > audioBuffer.duration) {
+                bestEndTime = audioBuffer.duration;
+            }
+
+            return { start: bestStartTime, end: bestEndTime };
+        }
+
+        /**
+         * Draws the audio waveform to the canvas.
+         * @param {AudioBuffer} audioBuffer
+         */
+        function drawWaveform(audioBuffer) {
+            const pcmData = audioBuffer.getChannelData(0);
+            const sampleRate = audioBuffer.sampleRate;
+            const canvasWidth = waveformCanvas.width;
+            const canvasHeight = waveformCanvas.height;
+            
+            waveformCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+            waveformCtx.fillStyle = '#6D28D9'; // purple-700
+
+            const samplesPerPixel = Math.floor(pcmData.length / canvasWidth);
+            const halfHeight = canvasHeight / 2;
+
+            for (let x = 0; x < canvasWidth; x++) {
+                const startSample = x * samplesPerPixel;
+                let min = 1.0;
+                let max = -1.0;
+
+                for (let i = 0; i < samplesPerPixel; i++) {
+                    const sample = pcmData[startSample + i];
+                    if (sample < min) min = sample;
+                    if (sample > max) max = sample;
+                }
+                
+                const amp = Math.max(Math.abs(min), Math.abs(max));
+                const barHeight = amp * halfHeight;
+                
+                // Draw a centered bar
+                waveformCtx.fillRect(x, halfHeight - barHeight, 1, barHeight * 2);
+            }
+        }
+
+        waveformCanvas.addEventListener('click', (event) => {
+            if (!decodedAudioBuffer) {
+                showStatus('Please analyze the video first to enable the waveform.', 'warning');
+                return;
+            }
+
+            const rect = waveformCanvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const clickPercent = x / rect.width;
+            
+            const videoDuration = decodedAudioBuffer.duration;
+            const newStartTime = clickPercent * videoDuration;
+
+            startTimeInput.value = newStartTime.toFixed(2);
+            sourceVideo.currentTime = newStartTime;
+
+            // Optional: Draw a marker
+            drawWaveform(decodedAudioBuffer); // Redraw
+            waveformCtx.fillStyle = 'rgba(236, 72, 153, 0.8)'; // pink-600
+            waveformCtx.fillRect(clickPercent * waveformCanvas.width, 0, 2, waveformCanvas.height);
+        });
+
+
+        processButton.addEventListener('click', () => {
+            const startTime = parseFloat(startTimeInput.value);
+            const duration = parseFloat(clipDurationInput.value);
+            const endTime = startTime + duration;
+
+            if (isNaN(startTime) || isNaN(duration)) {
+                showStatus('Invalid start time or duration.', 'error');
+                return;
+            }
+            if (startTime < 0 || duration <= 0) {
+                showStatus('Times must be positive numbers.', 'error');
+                return;
+            }
+            if (duration > 60) {
+                showStatus(`Clip is ${duration.toFixed(1)}s. Shorts should be 60s or less.`, 'warning');
+            }
+            if (endTime > sourceVideo.duration) {
+                showStatus(`Clip end time (${endTime.toFixed(1)}s) is beyond video duration (${sourceVideo.duration.toFixed(1)}s).`, 'error');
+                return;
+            }
+
+            generateClip(startTime, endTime);
+        });
+
+        /**
+         * Generates the clip using Canvas and MediaRecorder.
+         * @param {number} startTime - The start time in seconds.
+         * @param {number} endTime - The end time in seconds.
+         */
+        async function generateClip(startTime, endTime) {
+            showStatus('Processing... Please wait. Your browser is re-recording the clip.', 'loading');
+            processButton.disabled = true;
+            processButton.innerText = 'Processing...';
+
+            // 1. Set up canvas to be 9:16 aspect ratio (720p vertical)
+            const outputWidth = 720;
+            const outputHeight = 1280;
+            processingCanvas.width = outputWidth;
+            processingCanvas.height = outputHeight;
+
+            // 2. Calculate source video crop
+            const svw = sourceVideo.videoWidth;
+            const svh = sourceVideo.videoHeight;
+            const sourceAspect = svw / svh;
+            const targetAspect = outputWidth / outputHeight; // 9/16
+
+            let sx, sy, sw, sh;
+            if (sourceAspect > targetAspect) {
+                // Source is wider (e.g., 16:9). Crop sides.
+                sh = svh;
+                sw = svh * targetAspect;
+                sx = (svw - sw) / 2;
+                sy = 0;
+            } else {
+                // Source is taller (e.g., 4:3, 9:16). Crop top/bottom.
+                sw = svw;
+                sh = svw / targetAspect;
+                sx = 0;
+                sy = (svh - sh) / 2;
+            }
+
+            // 3. Set up MediaRecorder
+            let audioContext;
+            let audioDestination;
+            let audioStream;
+            let audioSourceNode;
+
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                // We use createMediaElementSource to capture audio *as it plays*
+                // This ensures it syncs with the video playback
+                audioSourceNode = audioContext.createMediaElementSource(sourceVideo);
+                audioDestination = audioContext.createMediaStreamDestination();
+                audioSourceNode.connect(audioDestination);
+                audioSourceNode.connect(audioContext.destination); // Play audio out loud while recording
+                audioStream = audioDestination.stream;
+            } catch (e) {
+                console.error("Audio context error:", e);
+                showStatus("Error setting up audio. Can't record sound.", 'error');
+                audioStream = new MediaStream(); // Empty audio stream
+            }
+
+            const videoStream = processingCanvas.captureStream(30); // 30 FPS
+            const combinedStream = new MediaStream([
+                ...videoStream.getVideoTracks(),
+                ...audioStream.getAudioTracks()
+            ]);
+
+            const chunks = [];
+            const recorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+
+            recorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    chunks.push(event.data);
+                }
+            };
+
+            recorder.onstop = () => {
+                const blob = new Blob(chunks, { type: 'video/webm' });
+                const url = URL.createOb
