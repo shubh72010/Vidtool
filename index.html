@@ -435,4 +435,82 @@
 
             recorder.onstop = () => {
                 const blob = new Blob(chunks, { type: 'video/webm' });
-                const url = URL.createOb
+                const url = URL.createObjectURL(blob);
+                
+                clipPreview.src = url;
+                downloadButton.href = url;
+                
+                previewSection.classList.remove('hidden');
+                previewPlaceholder.classList.add('hidden');
+                
+                showStatus('Clip generated successfully!', 'success');
+                processButton.disabled = false;
+                processButton.innerText = '4. Generate Vertical Clip';
+                
+                // Clean up
+                audioSourceNode?.disconnect();
+                audioContext?.close();
+            };
+
+            // 4. Start processing
+            sourceVideo.pause();
+            sourceVideo.currentTime = startTime;
+
+            // Wait for video to seek
+            const seekHandler = () => {
+                sourceVideo.play();
+                recorder.start();
+
+                let rafId;
+                function drawLoop() {
+                    if (sourceVideo.currentTime >= endTime || sourceVideo.paused) {
+                        sourceVideo.pause();
+                        if (recorder.state === 'recording') {
+                            recorder.stop();
+                        }
+                        cancelAnimationFrame(rafId);
+                        return;
+                    }
+                    
+                    // Draw the cropped video frame to the canvas
+                    processingCtx.drawImage(sourceVideo, sx, sy, sw, sh, 0, 0, outputWidth, outputHeight);
+                    rafId = requestAnimationFrame(drawLoop);
+                }
+                
+                drawLoop();
+                
+                // Remove this handler so it doesn't fire again
+                sourceVideo.removeEventListener('seeked', seekHandler);
+            };
+            sourceVideo.addEventListener('seeked', seekHandler);
+        }
+
+        /**
+         * Helper to show status messages to the user.
+         */
+        function showStatus(message, type) {
+            statusMessage.classList.remove('hidden', 'bg-blue-900', 'bg-green-900', 'bg-yellow-900', 'bg-red-900', 'bg-gray-700');
+            statusMessage.innerText = message;
+
+            switch (type) {
+                case 'info':
+                    statusMessage.classList.add('bg-blue-900', 'text-blue-100');
+                    break;
+                case 'success':
+                    statusMessage.classList.add('bg-green-900', 'text-green-100');
+                    break;
+                case 'warning':
+                    statusMessage.classList.add('bg-yellow-900', 'text-yellow-100');
+                    break;
+                case 'error':
+                    statusMessage.classList.add('bg-red-900', 'text-red-100');
+                    break;
+                case 'loading':
+                default:
+                    statusMessage.classList.add('bg-gray-700', 'text-gray-100');
+                    break;
+            }
+        }
+    </script>
+</body>
+</html>
